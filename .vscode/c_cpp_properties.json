@@ -4,7 +4,11 @@
             "name": "Win32",
             "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
             "cppStandard": "c++20",
-            "intelliSenseMode": "windows-gcc-x64"
+            "intelliSenseMode": "windows-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/my_torch/include",
+                "${workspaceFolder}/**"
+            ]
         }
     ],
     "version": 4
