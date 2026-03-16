@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <concurrencysal.h>
 #include <cstdio>
 #include <vector>
 #include <memory>
@@ -109,7 +110,7 @@ public:
 
     bool checkShape(const Tensor<T>& other) const {
         if (shape.size() != other.shape.size())
-            throw std::invalid_argument("Dimension must match for Sub/Add");
+            return false;
         for (size_t i = 0; i < shape.size(); i++)
             if (shape[i] != other.shape[i]) return false;
         return true;
@@ -303,18 +304,55 @@ public:
     // ==============================================================
 
     Tensor<T>& operator+=(const Tensor<T>& other) {
-        if (!checkShape(other))
-            throw std::invalid_argument("Tensor sizes must match for addition.");
-        for (size_t i = 0; i < data->size(); i++)
-            (*this->data)[i] += (*other.data)[i];
+        // if (!checkShape(other))
+        //     throw std::invalid_argument("Tensor sizes must match for addition.");
+        if(!checkShape(other)){
+            if(!checkBroadcastableElementwise(*this, other)){
+                 throw std::invalid_argument("Tensor sizes must match for addition.");
+            }
+
+            if(this->shape.size()>=other.shape.size()){
+                T* thisData=this->data->data()+this->offset;
+                const T* otherData = other.data->data() + other.offset;
+                for (size_t i = 0; i < this->getSize(); i++)
+                    thisData[i] += otherData[i % other.getSize()];
+                return  *this;
+
+            }else{
+                throw std::invalid_argument("Right side must be the smaller one for in-place broadcast.");
+            }
+
+            
+        }
+        T*       a = this->data->data() + this->offset;
+        const T* b = other.data->data() + other.offset;
+        for (size_t i = 0; i < this->getSize(); i++)
+            a[i] += b[i];
         return *this;
     }
+
+    // std::vector<int64_t>  makeBroadCast(const Tensor<T>& other){
+    //     size_t diff=other.shape.size()-this->shape.size();
+    //     std::vector<int64_t> new_shape;
+    //     for(size_t i=0;i<diff;i++){
+    //         new_shape.push_back(1);
+    //     }
+    //     for(size_t i =0; i<shape.size();i++){
+    //         new_shape.push_back(shape[i]);
+    //     }
+    //     return  new_shape;
+
+    // }
     Tensor<T> operator+(const Tensor<T>& other) const {
-        Tensor<T> res(shape);
-        *res.data   = *data;
-        res.strides = strides;
-        res += other;
-        return res;
+        if (this->getSize() >= other.getSize()) {
+            Tensor<T> res = *this;
+            res += other;
+            return res;
+        } else {
+            Tensor<T> res = other;
+            res += *this;
+            return res;
+        }
     }
 
     Tensor<T>& operator+=(const T value) {
@@ -322,26 +360,56 @@ public:
         return *this;
     }
     Tensor<T> operator+(const T value) const {
+
         Tensor<T> res(shape);
         *res.data   = *data;
         res.strides = strides;
         res += value;
         return res;
     }
-
+    bool checkBroadcastableElementwise(const Tensor<T>& A, const Tensor<T>& B) const {
+        size_t i = A.shape.size(), j = B.shape.size();
+        while (i > 0 && j > 0) {
+            i--; j--;
+            if (A.shape[i] != B.shape[j] && A.shape[i] != 1 && B.shape[j] != 1)
+                return false;
+        }
+        return true;
+    }
     Tensor<T>& operator-=(const Tensor<T>& other) {
-        if (!checkShape(other))
-            throw std::invalid_argument("Tensor sizes must match for subtraction.");
+        // if (!checkShape(other))
+        //     throw std::invalid_argument("Tensor sizes must match for subtraction.");
+                if(!checkShape(other)){
+        if(!checkBroadcastableElementwise(*this, other)){
+                 throw std::invalid_argument("Tensor sizes must match for addition.");
+            }
+
+            if(this->shape.size()>=other.shape.size()){
+                T* thisData=this->data->data()+this->offset;
+                const T* otherData = other.data->data() + other.offset;
+                for (size_t i = 0; i < this->getSize(); i++)
+                    thisData[i] -= otherData[i % other.getSize()];
+                return  *this;
+
+            }else{
+                throw std::invalid_argument("Right side must be the smaller one for in-place broadcast.");
+            }
+
+            
+        }
+        T*       a = this->data->data() + this->offset;
+        const T* b = other.data->data() + other.offset;
         for (size_t i = 0; i < data->size(); i++)
-            (*this->data)[i] -= (*other.data)[i];
+            a[i] -= b[i];
         return *this;
     }
     Tensor<T> operator-(const Tensor<T>& other) const {
-        Tensor<T> res(shape);
-        *res.data   = *data;
-        res.strides = strides;
-        res -= other;
-        return res;
+        if (this->getSize() >= other.getSize()) {
+                Tensor<T> res = *this;
+                res -= other;
+                return res;
+            }
+            throw std::invalid_argument("Right side must be smaller or equal for subtraction.");
     }
     static Tensor<T> zeros(std::vector<int64_t> shape){
         Tensor<T> t(shape);
@@ -361,9 +429,9 @@ public:
     }
     void fill(T val){
      
-        T* data =data->data();
+        T* ptr = this->data->data() + this->offset;
         for ( size_t i=0;i<data->size();i++ ) {
-            data[i]=val;
+            ptr[i]=val;
         }
        
     }
@@ -421,8 +489,8 @@ public:
         T* resData=res.data->data();
         for(size_t i=0;i<this->getSize();i++){
             T neg=-thisData[i];
-            T div=1+exp(neg);
-            T val= 1/div;
+            T div=static_cast<T>(1)+exp(neg);
+            T val= static_cast<T>(1)/div;
             resData[i] = val;
         }
         return res;
